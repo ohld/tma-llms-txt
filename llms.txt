@@ -1,0 +1,76 @@
+# Telegram Mini Apps Developer Guide
+
+> Build web apps inside Telegram with TON blockchain integration.
+> Feed this file to Claude Code, Cursor, or ChatGPT to build TMAs.
+
+## Agent Instructions
+- [How to use this guide](llms-full.txt): Read Section 0 first — decision tree, scaffold steps, common mistakes
+
+## Getting Started
+- [What is a TMA](https://core.telegram.org/bots/webapps): Architecture, lifecycle, WebView constraints
+- [BotFather Setup](llms-full.txt): Create bot, enable Mini App, set URL (Section 2)
+- [Local Development](llms-full.txt): ngrok HTTPS tunnel with free static domain (Section 2)
+- [Hello World](llms-full.txt): Minimal HTML + telegram-web-app.js + ready() (Section 2)
+- [Community Docs](https://docs.telegram-mini-apps.com/platform/about): Comprehensive TMA platform guide
+
+## Frontend
+- [Telegram SDK v3](https://docs.telegram-mini-apps.com/packages/telegram-apps-sdk/3-x): @telegram-apps/sdk — TypeScript, signals, React/Vue
+- [React SDK](https://docs.telegram-mini-apps.com/packages/telegram-apps-sdk-react/2-x): React hooks and bindings
+- [Official WebApp Script](https://core.telegram.org/bots/webapps#initializing-mini-apps): telegram-web-app.js (vanilla)
+- [MainButton, BackButton, Popups](llms-full.txt): UI components reference (Section 3)
+- [Theming](llms-full.txt): CSS variables var(--tg-theme-*), dark mode (Section 3)
+- [Storage](llms-full.txt): CloudStorage, DeviceStorage, SecureStorage (Section 3)
+- [Methods Reference](https://docs.telegram-mini-apps.com/platform/methods): 70+ available methods
+- [Events Reference](https://docs.telegram-mini-apps.com/platform/events): 35+ events
+
+## Authentication
+- [Init Data](https://docs.telegram-mini-apps.com/platform/init-data): What initData is, fields, user object
+- [HMAC-SHA256 Validation](llms-full.txt): Algorithm + Node.js + Python code (Section 4)
+- [@telegram-apps/init-data-node](https://docs.telegram-mini-apps.com/packages/telegram-apps-init-data-node): Official Node.js validation package
+- [Authorizing User](https://docs.telegram-mini-apps.com/platform/authorizing-user): Auth patterns guide
+- [Express Middleware](llms-full.txt): Auth middleware pattern (Section 4)
+- [FastAPI Middleware](llms-full.txt): Python auth middleware (Section 4)
+
+## TON Connect
+- [TON Connect Overview](https://docs.ton.org/ecosystem/ton-connect/overview): Protocol overview
+- [React SDK](https://docs.ton.org/v3/guidelines/ton-connect/frameworks/react): @tonconnect/ui-react setup
+- [Creating Manifest](https://docs.ton.org/v3/guidelines/ton-connect/creating-manifest): tonconnect-manifest.json
+- [TON Transfer](llms-full.txt): Send TON with toNano() + comments (Section 5)
+- [Jetton Transfer](https://docs.ton.org/v3/guidelines/ton-connect/cookbook/jetton-transfer): USDT/token transfer (opcode 0xf8a7ea5)
+- [Preparing Messages](https://docs.ton.org/v3/guidelines/ton-connect/guidelines/preparing-messages): Transaction message format
+- [TONAPI](https://docs.tonconsole.com/tonapi/rest-api): Balances, prices, transaction history
+- [Demo dApp](https://github.com/ton-connect/demo-dapp-with-wallet): Reference React implementation
+- [USDT Payments Demo](https://github.com/ton-community/tma-usdt-payments-demo): Jetton payments example
+
+## Backend
+- [grammY](https://grammy.dev/): TypeScript bot framework (recommended)
+- [aiogram 3](https://docs.aiogram.dev/): Python bot framework
+- [Telegram Bot API](https://core.telegram.org/bots/api): Official bot API reference
+- [Webhook + API Server](llms-full.txt): Express + grammY on same server (Section 6)
+- [FastAPI + aiogram](llms-full.txt): Python full-stack setup (Section 6)
+- [Database Patterns](llms-full.txt): PostgreSQL, user table, upsert (Section 6)
+- [Telegram Stars](https://core.telegram.org/bots/payments-stars): Fiat payments for digital goods
+- [Webhooks Guide](https://core.telegram.org/bots/webhooks): Setup and requirements
+
+## Deployment
+- [Docker Compose](llms-full.txt): Nginx + backend + postgres + redis (Section 7)
+- [Pre-Launch Checklist](llms-full.txt): What to verify before going live (Section 7)
+- [Blockchain Guidelines](https://core.telegram.org/bots/blockchain-guidelines): Telegram crypto rules
+
+## Testing & Debugging
+- [Debugging Guide](https://docs.telegram-mini-apps.com/platform/debugging): Chrome/Safari/Eruda setup
+- [Test Environment](https://core.telegram.org/bots/webapps#using-bots-in-the-test-environment): Telegram test mode
+- [Mock initData](llms-full.txt): VITE_DEV_INIT_DATA pattern for browser testing (Section 8)
+- [Test User](llms-full.txt): id=0 pattern for automated testing (Section 8)
+
+## Best Practices
+- [Top 10 Rules](llms-full.txt): ready(), launch params, session interruption, theming (Section 9)
+- [Common LLM Mistakes](llms-full.txt): Top 10 mistakes AI agents make (Section 0)
+
+## GitHub & npm
+- [TMA GitHub Org](https://github.com/telegram-mini-apps): Official repositories
+- [TON Connect SDK](https://github.com/ton-connect/sdk): TON Connect protocol
+- [@telegram-apps/sdk](https://www.npmjs.com/package/@telegram-apps/sdk): TMA SDK on npm
+- [@tonconnect/ui-react](https://www.npmjs.com/package/@tonconnect/ui-react): TON Connect React on npm
+- [grammy](https://www.npmjs.com/package/grammy): grammY on npm
+- [TMA Step-by-Step](https://docs.ton.org/v3/guidelines/dapps/tma/tutorials/step-by-step-guide): TON Foundation tutorial

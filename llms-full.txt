@@ -1,0 +1,1654 @@
+# Telegram Mini Apps — Complete Developer Guide for LLMs
+
+> This file is designed to be fed to AI coding assistants (Claude Code, Cursor, ChatGPT, etc.)
+> to build Telegram Mini Apps from scratch. Read Section 0 first.
+> Version: 1.0 | Updated: January 2026
+> Source: https://github.com/ohld/tma-llms-txt
+
+
+---
+
+## Section 0: Agent Instructions
+
+When a developer asks you to build a Telegram Mini App (TMA), follow this decision tree and workflow.
+
+### Decision Tree
+
+1. **Does the developer have a Telegram bot token?**
+   - YES -> proceed to scaffolding
+   - NO -> guide them through BotFather setup (Section 2)
+
+2. **Does the app need a backend?**
+   - Frontend-only: static HTML/CSS/JS game, calculator, viewer, tool
+   - Full-stack: user accounts, database, payments, bot notifications, leaderboards
+   - Rule of thumb: if the app saves data across sessions or sends messages -> full-stack
+
+3. **Does the app need TON blockchain?**
+   - YES -> add TON Connect (Section 5)
+   - NO -> skip blockchain, use Telegram Stars for fiat payments if needed
+
+### Scaffold Steps
+
+For **frontend-only** TMA:
+1. Create project: `npm create vite@latest myapp -- --template react-ts` (or vanilla)
+2. Install SDK: `npm i @telegram-apps/sdk-react`
+3. Add `telegram-web-app.js` script tag to `index.html`
+4. Call `Telegram.WebApp.ready()` on mount
+5. Set up ngrok for local HTTPS: `ngrok http --url your-name.ngrok-free.dev 3000`
+6. Set Mini App URL in BotFather to ngrok URL
+7. Open in Telegram, test
+
+For **full-stack** TMA:
+1. Create monorepo: `frontend/` + `backend/`
+2. Frontend: same as above
+3. Backend: Express + grammY + PostgreSQL (Node.js) OR FastAPI + aiogram 3 + SQLAlchemy (Python)
+4. Add initData validation middleware
+5. Add webhook endpoint for bot
+6. Docker Compose for deployment
+7. Set up ngrok, test locally
+
+### Header for API Requests
+
+The frontend must send initData to the backend on every request:
+
+```
+Authorization: tma <initDataRaw>
+```
+
+The backend validates this header using HMAC-SHA256.
+
+### Common LLM Mistakes (Top 10)
+
+1. **Not calling `ready()`** — the loading spinner never disappears. Call `Telegram.WebApp.ready()` immediately after mount.
+2. **Losing launch params** — hash-based routing overwrites `window.location.hash` which contains `tgWebAppData`. Save launch params BEFORE setting up a router.
+3. **Using HTTP instead of HTTPS** — Telegram requires HTTPS for Mini App URLs. Use ngrok or cloudflared for local dev.
+4. **Trusting client-side initData** — always validate initData on the server. Never use client-parsed user data for authorization.
+5. **Sending to jetton master address** — when transferring jettons (USDT), the transaction destination is the SENDER'S jetton wallet address, NOT the jetton master contract.
+6. **Missing `twaReturnUrl`** — TON Connect requires `twaReturnUrl` in `actionsConfiguration` to return to TMA after wallet interaction.
+7. **Not handling session interruption** — mobile users switch apps constantly. Save state progressively, not just on exit.
+8. **Hardcoding colors** — use `var(--tg-theme-*)` CSS variables. Telegram has light/dark themes and custom colors.
+9. **Not checking method availability** — some methods require specific Telegram versions. Check with `isAvailable()` or version comparison before calling.
+10. **Ignoring safe areas** — notched devices (iPhone, modern Android) need safe area insets. Use `env(safe-area-inset-*)` CSS.
+
+
+---
+
+## Section 1: What is a Telegram Mini App
+
+A Telegram Mini App (TMA) is a web application that runs inside Telegram's built-in WebView. It gets native-like capabilities through the Telegram JavaScript SDK: user identity, payments, haptic feedback, theming, and more.
+
+### Architecture
+
+```
+User (Telegram Client)
+  |
+  v
+Bot (created via BotFather)
+  |
+  v
+Frontend (HTML/JS served over HTTPS)
+  |
+  v
+Backend (optional: API + database)
+  |
+  v
+Blockchain (optional: TON Connect)
+```
+
+Components:
+- **Telegram** — container (WebView), authentication, distribution
+- **Bot** — entry points, commands, webhooks, notifications
+- **Frontend** — SPA (React/Vue/Vanilla), Telegram SDK
+- **Backend** — API, initData validation, business logic, database
+- **Blockchain** — TON Connect, crypto payments (optional)
+
+### Lifecycle
+
+1. **Launch** — user taps a button/link in Telegram
+2. **Init** — Telegram loads URL in WebView, injects launch params via URL hash
+3. **Ready** — app calls `Telegram.WebApp.ready()`, loading spinner disappears
+4. **Active** — user interacts with the app
+5. **Background** — user switches to a chat or another app
+6. **Re-entry** — user returns (state may or may not persist)
+7. **Termination** — OS kills the WebView to reclaim memory
+
+Sessions can restart without warning. Save state progressively.
+
+### WebView Constraints
+
+- No access to `window.open()` for new windows (use `openLink()` instead)
+- No camera/microphone access by default (use Telegram's biometric API for auth)
+- `localStorage` and `sessionStorage` are available but may be cleared
+- Max `sendData()` payload: 4096 bytes (and it closes the app)
+- Cookies may not persist across sessions
+- Use `CloudStorage` for persistent key-value data (1024 keys, synced across devices)
+
+### Entry Points (7 Ways to Open a TMA)
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| Menu Button | Button in bot's chat header | Primary entry for most apps |
+| Inline Button | Button in a bot message | Contextual actions |
+| Direct Link | `t.me/botname/appname?startapp=param` | Sharing, deep links |
+| Main Mini App | Button in bot's profile | App showcase |
+| Keyboard Button | Custom keyboard button | Quick actions |
+| Inline Mode | From inline search | Content creation |
+| Attachment Menu | From attachment menu | File/data sharing |
+
+### Platform Support
+
+TMAs run on: iOS, Android, macOS, Windows, Linux (Desktop), Web A, Web K (browser clients). Test on at least iOS + Android + Desktop.
+
+### Documentation
+
+- Official: https://core.telegram.org/bots/webapps
+- Community: https://docs.telegram-mini-apps.com/platform/about
+- Methods: https://docs.telegram-mini-apps.com/platform/methods
+- Events: https://docs.telegram-mini-apps.com/platform/events
+
+
+---
+
+## Section 2: Getting Started
+
+### Step 1: Create a Bot with BotFather
+
+1. Open https://t.me/BotFather in Telegram
+2. Send `/newbot`
+3. Choose a name (e.g., "My Game Bot")
+4. Choose a username (must end with `bot`, e.g., `mygame_bot`)
+5. Save the bot token (format: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
+6. Send `/mybots` → select your bot → Bot Settings → Configure Mini App → Enable
+7. Send `/setmenubutton` → select your bot → enter your HTTPS URL
+
+### Step 2: Set Up Local HTTPS with ngrok
+
+Telegram requires HTTPS for Mini App URLs. Use ngrok for local development with a permanent URL.
+
+**Install ngrok:**
+```bash
+# macOS
+brew install ngrok
+
+# Other platforms: https://ngrok.com/download
+```
+
+**Set up free static domain:**
+1. Sign up at https://dashboard.ngrok.com
+2. Get your auth token from the dashboard
+3. Run: `ngrok config add-authtoken YOUR_TOKEN`
+4. Go to https://dashboard.ngrok.com/domains
+5. Claim a free static domain (e.g., `your-name.ngrok-free.dev`)
+
+**Start tunnel:**
+```bash
+ngrok http --url your-name.ngrok-free.dev 3000
+```
+
+This gives you a permanent HTTPS URL that always points to `localhost:3000`. Set this URL in BotFather — you never need to update it.
+
+**Alternative — cloudflared (random URL):**
+```bash
+brew install cloudflared
+cloudflared tunnel --url http://localhost:3000
+```
+Downside: URL changes every restart, so you must update BotFather each time.
+
+### Step 3: Hello World
+
+Create a minimal TMA. This is the simplest possible app:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>My TMA</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--tg-theme-bg-color, #fff);
+      color: var(--tg-theme-text-color, #000);
+    }
+    .card {
+      background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Hello, <span id="name">User</span>!</h1>
+  <div class="card">
+    <p>Platform: <span id="platform"></span></p>
+    <p>Version: <span id="version"></span></p>
+  </div>
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    document.getElementById('name').textContent = tg.initDataUnsafe?.user?.first_name || 'User';
+    document.getElementById('platform').textContent = tg.platform;
+    document.getElementById('version').textContent = tg.version;
+  </script>
+</body>
+</html>
+```
+
+### Step 4: Test
+
+1. Start local dev server: `npx serve .` or `npm run dev` (Vite)
+2. Start ngrok: `ngrok http --url your-name.ngrok-free.dev 3000`
+3. Set URL in BotFather: `/setmenubutton` → `https://your-name.ngrok-free.dev`
+4. Open your bot in Telegram → tap the menu button → Mini App loads
+5. Verify: user name displays, theme matches Telegram
+
+### Step 5: Set Up a React + Vite Project (Recommended)
+
+For anything beyond a simple page:
+
+```bash
+npm create vite@latest my-tma -- --template react-ts
+cd my-tma
+npm install
+npm install @telegram-apps/sdk-react
+```
+
+In `src/main.tsx`:
+```tsx
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App';
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
+```
+
+In `src/App.tsx`:
+```tsx
+import { useEffect } from 'react';
+import { init, miniApp, backButton } from '@telegram-apps/sdk-react';
+
+function App() {
+  useEffect(() => {
+    init();
+    miniApp.mount();
+    miniApp.ready();
+    backButton.mount();
+  }, []);
+
+  return (
+    <div style={{
+      padding: 16,
+      background: 'var(--tg-theme-bg-color)',
+      color: 'var(--tg-theme-text-color)',
+      minHeight: '100vh'
+    }}>
+      <h1>My Mini App</h1>
+    </div>
+  );
+}
+
+export default App;
+```
+
+In `index.html`, add before closing `</head>`:
+```html
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+```
+
+
+---
+
+## Section 3: Frontend
+
+### SDK Choice
+
+Two options for interacting with Telegram from your frontend:
+
+**Option A: Official Script (Vanilla JS)**
+```html
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+```
+- Access via `window.Telegram.WebApp`
+- No TypeScript, no tree-shaking
+- Good for simple apps, prototypes, vanilla JS
+
+**Option B: Community SDK (Recommended for React/Vue)**
+```bash
+npm i @telegram-apps/sdk          # Core (v3.x)
+npm i @telegram-apps/sdk-react    # React bindings
+npm i @telegram-apps/sdk-vue      # Vue bindings
+```
+- Full TypeScript support
+- Reactive signals pattern
+- `isAvailable()` checks for method support
+- Framework-specific hooks
+
+### Initialization with Community SDK (React)
+
+```tsx
+import { init, miniApp, backButton, mainButton } from '@telegram-apps/sdk-react';
+
+// Call once at app startup
+init();
+
+// Mount components you need (must mount before using)
+miniApp.mount();
+backButton.mount();
+mainButton.mount();
+
+// Signal ready
+miniApp.ready();
+```
+
+Key concept: **Scopes**. Each SDK feature is a "scope" (backButton, miniApp, mainButton, etc.) with:
+- `mount()` / `mountSync()` — initialize the scope
+- `isMounted()` — check if mounted
+- `isAvailable()` — check if supported in current Telegram version
+- Scope-specific methods and signals
+
+### MainButton
+
+The persistent button at the bottom of the screen:
+
+```tsx
+import { mainButton } from '@telegram-apps/sdk-react';
+
+// Show
+mainButton.setParams({
+  text: 'Continue',
+  backgroundColor: '#007AFF',
+  textColor: '#FFFFFF',
+  isVisible: true,
+  isEnabled: true,
+});
+
+// Handle click
+const off = mainButton.onClick(() => {
+  console.log('Main button clicked');
+});
+
+// Cleanup
+off(); // remove listener
+```
+
+### BackButton
+
+```tsx
+import { backButton } from '@telegram-apps/sdk-react';
+
+backButton.show();
+
+const off = backButton.onClick(() => {
+  // Navigate back in your app
+  navigate(-1);
+});
+
+// Hide when not needed
+backButton.hide();
+```
+
+### Popups and Alerts
+
+```tsx
+import { popup, hapticFeedback } from '@telegram-apps/sdk-react';
+
+// Alert
+await popup.open({ message: 'Hello!' });
+
+// Confirm
+const result = await popup.open({
+  title: 'Confirm',
+  message: 'Are you sure?',
+  buttons: [
+    { id: 'ok', type: 'ok', text: 'Yes' },
+    { id: 'cancel', type: 'cancel' },
+  ],
+});
+if (result === 'ok') { /* confirmed */ }
+```
+
+### Haptic Feedback
+
+```tsx
+import { hapticFeedback } from '@telegram-apps/sdk-react';
+
+hapticFeedback.impactOccurred('medium');     // light, medium, heavy, rigid, soft
+hapticFeedback.notificationOccurred('success'); // success, error, warning
+hapticFeedback.selectionChanged();
+```
+
+### Theming
+
+Telegram injects CSS variables that match the user's theme:
+
+```css
+:root {
+  /* Main colors */
+  --tg-theme-bg-color: #ffffff;
+  --tg-theme-text-color: #000000;
+  --tg-theme-hint-color: #999999;
+  --tg-theme-link-color: #007AFF;
+  --tg-theme-button-color: #007AFF;
+  --tg-theme-button-text-color: #ffffff;
+
+  /* Secondary */
+  --tg-theme-secondary-bg-color: #f0f0f0;
+  --tg-theme-header-bg-color: #ffffff;
+  --tg-theme-bottom-bar-bg-color: #f0f0f0;
+  --tg-theme-accent-text-color: #007AFF;
+  --tg-theme-section-bg-color: #ffffff;
+  --tg-theme-section-header-text-color: #999999;
+  --tg-theme-subtitle-text-color: #999999;
+  --tg-theme-destructive-text-color: #FF3B30;
+}
+```
+
+Always use these variables. Never hardcode colors. Your app will match light mode, dark mode, and custom Telegram themes automatically.
+
+### Safe Areas
+
+For devices with notches/cutouts:
+
+```css
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+```
+
+The Telegram SDK also provides `safeAreaInset` and `contentSafeAreaInset` values.
+
+### Storage
+
+| Type | Capacity | Location | Use Case |
+|------|----------|----------|----------|
+| CloudStorage | 1024 keys | Telegram cloud (synced) | User preferences, game state |
+| DeviceStorage (v9.0+) | 5 MB | Local device | Cached data, offline content |
+| SecureStorage (v9.0+) | 10 items | iOS Keychain / Android Keystore | Tokens, sensitive data |
+
+```tsx
+// CloudStorage
+import { cloudStorage } from '@telegram-apps/sdk-react';
+
+await cloudStorage.setItem('score', '100');
+const score = await cloudStorage.getItem('score');
+await cloudStorage.removeItem('score');
+```
+
+### Navigation
+
+```tsx
+import { openLink, openTelegramLink } from '@telegram-apps/sdk-react';
+
+// Open external URL (in browser)
+openLink('https://example.com');
+
+// Open Telegram link (in Telegram)
+openTelegramLink('https://t.me/username');
+```
+
+### Documentation
+
+- SDK v3: https://docs.telegram-mini-apps.com/packages/telegram-apps-sdk/3-x
+- React SDK: https://docs.telegram-mini-apps.com/packages/telegram-apps-sdk-react/2-x
+- Official Script: https://core.telegram.org/bots/webapps#initializing-mini-apps
+
+
+---
+
+## Section 4: Authentication
+
+Every TMA receives `initData` from Telegram — a signed payload containing user info. This is the primary authentication mechanism.
+
+### What is initData
+
+When Telegram opens your Mini App, it appends data to the URL hash:
+
+```
+https://your-app.com#tgWebAppData=...&tgWebAppVersion=8.0&tgWebAppPlatform=ios
+```
+
+The `tgWebAppData` parameter is a URL-encoded query string containing:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| auth_date | number | Unix timestamp when data was created |
+| hash | string | HMAC-SHA256 signature |
+| signature | string | Ed25519 signature (for third-party validation) |
+| user | JSON string | User object |
+| query_id | string | Session ID (for inline mode) |
+| start_param | string | From deep link (`?startapp=value`) |
+| chat_type | string | "private", "group", "supergroup", "channel" |
+| chat_instance | string | Unique chat identifier |
+
+### User Object
+
+```json
+{
+  "id": 123456789,
+  "first_name": "John",
+  "last_name": "Doe",
+  "username": "johndoe",
+  "language_code": "en",
+  "is_premium": true,
+  "photo_url": "https://t.me/i/userpic/...",
+  "allows_write_to_pm": true
+}
+```
+
+### HMAC-SHA256 Validation Algorithm
+
+```
+1. Parse initData as URL query string
+2. Extract and remove "hash" parameter
+3. Sort remaining parameters alphabetically
+4. Join as "key=value" pairs separated by "\n"
+5. Compute: secret_key = HMAC-SHA256("WebAppData", bot_token)
+6. Compute: expected_hash = HMAC-SHA256(secret_key, data_check_string)
+7. Compare expected_hash with received hash (constant-time)
+8. Check auth_date is not too old (e.g., < 24 hours)
+```
+
+### Node.js Validation
+
+**Using official package (recommended):**
+```bash
+npm install @telegram-apps/init-data-node
+```
+
+```typescript
+import { validate, parse, isValid } from '@telegram-apps/init-data-node';
+
+// Throws on failure
+validate(initData, process.env.BOT_TOKEN!);
+
+// Boolean check
+if (isValid(initData, process.env.BOT_TOKEN!)) { /* ok */ }
+
+// Parse user data
+const parsed = parse(initData);
+console.log(parsed.user); // { id, firstName, lastName, username, ... }
+```
+
+**Manual validation:**
+```typescript
+import crypto from 'crypto';
+
+function validateInitData(initData: string, botToken: string): boolean {
+  const params = new URLSearchParams(initData);
+  const hash = params.get('hash');
+  params.delete('hash');
+
+  const dataCheckString = [...params.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
+
+  const secretKey = crypto
+    .createHmac('sha256', 'WebAppData')
+    .update(botToken)
+    .digest();
+
+  const computed = crypto
+    .createHmac('sha256', secretKey)
+    .update(dataCheckString)
+    .digest('hex');
+
+  return computed === hash;
+}
+```
+
+### Python Validation
+
+```python
+import hmac
+import hashlib
+from urllib.parse import unquote
+
+def validate_init_data(init_data: str, bot_token: str) -> bool:
+    parsed = sorted(
+        [chunk.split("=", 1) for chunk in unquote(init_data).split("&")
+         if not chunk.startswith("hash=")],
+        key=lambda x: x[0]
+    )
+    data_check = "\n".join([f"{k}={v}" for k, v in parsed])
+    secret_key = hmac.new(
+        b"WebAppData", bot_token.encode(), hashlib.sha256
+    ).digest()
+    computed = hmac.new(
+        secret_key, data_check.encode(), hashlib.sha256
+    ).hexdigest()
+
+    received_hash = dict(
+        chunk.split("=", 1) for chunk in unquote(init_data).split("&")
+    ).get("hash", "")
+
+    return hmac.compare_digest(computed, received_hash)
+```
+
+### Express Middleware
+
+```typescript
+import { validate, parse } from '@telegram-apps/init-data-node';
+
+function telegramAuthMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('tma ')) {
+    return res.status(401).json({ error: 'Missing Telegram auth' });
+  }
+
+  const initData = authHeader.slice(4);
+
+  try {
+    validate(initData, process.env.BOT_TOKEN!);
+  } catch (e) {
+    return res.status(403).json({ error: 'Invalid initData' });
+  }
+
+  req.telegramUser = parse(initData).user;
+  next();
+}
+
+// Usage
+app.use('/api', telegramAuthMiddleware);
+```
+
+The frontend sends:
+```typescript
+fetch('/api/endpoint', {
+  headers: {
+    'Authorization': `tma ${window.Telegram.WebApp.initData}`,
+  },
+});
+```
+
+### FastAPI Middleware (Python)
+
+```python
+from fastapi import Request, HTTPException, Depends
+
+async def get_telegram_user(request: Request) -> dict:
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("tma "):
+        raise HTTPException(401, "Missing Telegram auth")
+
+    init_data = auth[4:]
+    if not validate_init_data(init_data, BOT_TOKEN):
+        raise HTTPException(403, "Invalid initData")
+
+    # Parse user from initData
+    from urllib.parse import parse_qs, unquote
+    import json
+    params = parse_qs(unquote(init_data))
+    user = json.loads(params["user"][0])
+    return user
+
+# Usage
+@app.get("/api/profile")
+async def get_profile(user: dict = Depends(get_telegram_user)):
+    return {"telegram_id": user["id"], "name": user["first_name"]}
+```
+
+### Auth Patterns
+
+**Pattern A: Stateless (initData on every request)**
+- Send initData in every API call
+- Backend validates each time
+- Simple, no token management
+- Good for: simple apps, few API calls
+
+**Pattern B: initData -> JWT**
+1. Client sends initData to `/auth/login`
+2. Backend validates, creates/finds user in DB, returns JWT
+3. Client stores JWT in localStorage
+4. Subsequent calls use `Authorization: Bearer <jwt>`
+
+```typescript
+// POST /auth/login
+app.post('/auth/login', async (req, res) => {
+  const { initData } = req.body;
+
+  try {
+    validate(initData, process.env.BOT_TOKEN!);
+  } catch {
+    return res.status(403).json({ error: 'Invalid' });
+  }
+
+  const parsed = parse(initData);
+  const user = await upsertUser(parsed.user);
+
+  const token = jwt.sign(
+    { userId: user.id, telegramId: parsed.user.id },
+    process.env.JWT_SECRET!,
+    { expiresIn: '7d' }
+  );
+
+  res.json({ token, user });
+});
+```
+
+Good for: complex apps, many API calls, third-party service integration.
+
+### Documentation
+
+- Init Data: https://docs.telegram-mini-apps.com/platform/init-data
+- Authorizing User: https://docs.telegram-mini-apps.com/platform/authorizing-user
+- @telegram-apps/init-data-node: https://docs.telegram-mini-apps.com/packages/telegram-apps-init-data-node
+
+
+---
+
+## Section 5: TON Connect
+
+TON Connect allows users to connect their TON wallet and sign transactions from within your TMA.
+
+### Packages
+
+```bash
+npm install @tonconnect/ui-react   # React UI components + hooks
+npm install @ton/ton               # TON blockchain SDK
+npm install @ton/core              # Core types (Address, Cell, etc.)
+npm install @ton-api/client        # TONAPI for balances/prices
+```
+
+For Vite, also install polyfills:
+```bash
+npm install vite-plugin-node-polyfills
+```
+
+In `vite.config.ts`:
+```typescript
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
+
+export default defineConfig({
+  plugins: [react(), nodePolyfills()],
+});
+```
+
+### Provider Setup
+
+Wrap your app with `TonConnectUIProvider`:
+
+```tsx
+import { TonConnectUIProvider } from '@tonconnect/ui-react';
+
+function Root() {
+  return (
+    <TonConnectUIProvider
+      manifestUrl="https://your-app.com/tonconnect-manifest.json"
+      actionsConfiguration={{
+        twaReturnUrl: 'https://t.me/YourBot/yourapp'  // REQUIRED for TMA
+      }}
+    >
+      <App />
+    </TonConnectUIProvider>
+  );
+}
+```
+
+`twaReturnUrl` is the deep link that returns the user to your TMA after wallet interaction. Format: `https://t.me/<bot_username>/<app_shortname>`. Without this, users get stuck in the wallet app.
+
+### Manifest File
+
+Create `public/tonconnect-manifest.json`:
+
+```json
+{
+  "url": "https://your-app.com",
+  "name": "My TMA App",
+  "iconUrl": "https://your-app.com/icon-192.png",
+  "termsOfUseUrl": "https://your-app.com/terms",
+  "privacyPolicyUrl": "https://your-app.com/privacy"
+}
+```
+
+Requirements:
+- Must be publicly accessible via GET (no auth)
+- `iconUrl` must be a valid PNG image
+- All URLs must be absolute HTTPS
+
+### Connect Button
+
+```tsx
+import { TonConnectButton } from '@tonconnect/ui-react';
+
+// Place in header, right side (standard UX convention)
+<TonConnectButton />
+```
+
+### Hooks
+
+```tsx
+import {
+  useTonConnectUI,
+  useTonWallet,
+  useTonAddress,
+  useIsConnectionRestored,
+} from '@tonconnect/ui-react';
+
+function WalletInfo() {
+  const wallet = useTonWallet();           // Full wallet object or null
+  const address = useTonAddress();          // User-friendly address string
+  const isRestored = useIsConnectionRestored(); // Previous session restored?
+  const [tonConnectUI] = useTonConnectUI(); // For sending transactions
+
+  if (!wallet) return <p>Connect your wallet</p>;
+  return <p>Connected: {address}</p>;
+}
+```
+
+### TON Transfer
+
+```tsx
+import { toNano } from '@ton/ton';
+
+async function sendTon() {
+  const [tonConnectUI] = useTonConnectUI();
+
+  const tx = {
+    validUntil: Math.floor(Date.now() / 1000) + 360,
+    messages: [{
+      address: 'EQDestinationAddress...',
+      amount: toNano('0.5').toString(),
+    }],
+  };
+
+  const result = await tonConnectUI.sendTransaction(tx);
+  // result.boc contains the signed transaction
+}
+```
+
+### TON Transfer with Comment
+
+```tsx
+import { beginCell, toNano } from '@ton/ton';
+
+const body = beginCell()
+  .storeUint(0, 32)                     // 0 = text comment opcode
+  .storeStringTail('Payment for Order #123')
+  .endCell();
+
+const tx = {
+  validUntil: Math.floor(Date.now() / 1000) + 360,
+  messages: [{
+    address: 'EQDestinationAddress...',
+    amount: toNano('0.05').toString(),
+    payload: body.toBoc().toString('base64'),
+  }],
+};
+```
+
+### Jetton (USDT/Token) Transfer
+
+This is the most error-prone part. Key rule: **send to the SENDER'S jetton wallet address, NOT the jetton master contract.**
+
+```tsx
+import { beginCell, toNano, Address } from '@ton/ton';
+
+const DEST_WALLET = 'EQRecipientAddress...';
+const SENDER_WALLET = 'EQYourAddress...'; // for excess return
+
+const body = beginCell()
+  .storeUint(0xf8a7ea5, 32)                      // jetton transfer opcode
+  .storeUint(0, 64)                               // query_id
+  .storeCoins(1_000_000n)                          // amount: 1 USDT (6 decimals)
+  .storeAddress(Address.parse(DEST_WALLET))        // recipient
+  .storeAddress(Address.parse(SENDER_WALLET))      // response (excess) destination
+  .storeUint(0, 1)                                 // no custom_payload
+  .storeCoins(toNano('0.05'))                      // forward gas amount
+  .storeUint(0, 1)                                 // no forward_payload
+  .endCell();
+
+const tx = {
+  validUntil: Math.floor(Date.now() / 1000) + 360,
+  messages: [{
+    address: SENDER_JETTON_WALLET,                 // ← sender's JETTON wallet, NOT master
+    amount: toNano('0.1').toString(),               // gas for the transaction
+    payload: body.toBoc().toString('base64'),
+  }],
+};
+
+const result = await tonConnectUI.sendTransaction(tx);
+```
+
+**Finding the sender's jetton wallet address:**
+
+Use TONAPI to look up the sender's jetton wallet for a specific token:
+
+```typescript
+import { TonApiClient } from '@ton-api/client';
+
+const ta = new TonApiClient({
+  baseUrl: 'https://tonapi.io',
+  apiKey: process.env.TONAPI_KEY,
+});
+
+// Get user's jetton wallets
+const balances = await ta.accounts.getAccountJettonsBalances(userAddress);
+const usdtWallet = balances.balances.find(
+  b => b.jetton.address === USDT_MASTER_ADDRESS
+);
+const senderJettonWallet = usdtWallet?.walletAddress?.address;
+```
+
+### Token Decimals
+
+| Token | Decimals | 1 token = |
+|-------|----------|-----------|
+| TON | 9 | 1_000_000_000 nanoton |
+| USDT (on TON) | 6 | 1_000_000 |
+| Most jettons | 9 | 1_000_000_000 |
+
+### TONAPI for Balances and Prices
+
+```typescript
+import { TonApiClient } from '@ton-api/client';
+
+const ta = new TonApiClient({
+  baseUrl: 'https://tonapi.io',
+  apiKey: process.env.TONAPI_KEY, // optional but recommended
+});
+
+// Account balance
+const account = await ta.accounts.getAccount(address);
+const tonBalance = account.balance; // in nanotons
+
+// Jetton balances
+const jettons = await ta.accounts.getAccountJettonsBalances(address);
+// jettons.balances: [{ balance, price, jetton: { name, symbol, decimals, image } }]
+
+// Prices
+const rates = await ta.rates.getRates({
+  tokens: ['TON'],
+  currencies: ['usd'],
+});
+
+// Transaction history
+const events = await ta.accounts.getAccountEvents(address, { limit: 20 });
+```
+
+### Full Package List
+
+```json
+{
+  "dependencies": {
+    "@tonconnect/ui-react": "^2.0.3",
+    "@ton/ton": "^15.0.0",
+    "@ton/core": "^0.58.0",
+    "@ton/crypto": "^3.3.0",
+    "@ton-api/client": "^0.4.0"
+  },
+  "devDependencies": {
+    "vite-plugin-node-polyfills": "^0.22.0"
+  }
+}
+```
+
+### Documentation
+
+- TON Connect Overview: https://docs.ton.org/ecosystem/ton-connect/overview
+- React SDK: https://docs.ton.org/v3/guidelines/ton-connect/frameworks/react
+- Manifest: https://docs.ton.org/v3/guidelines/ton-connect/creating-manifest
+- Preparing Messages: https://docs.ton.org/v3/guidelines/ton-connect/guidelines/preparing-messages
+- Jetton Transfer: https://docs.ton.org/v3/guidelines/ton-connect/cookbook/jetton-transfer
+- TONAPI: https://docs.tonconsole.com/tonapi/rest-api
+- Demo dApp: https://github.com/ton-connect/demo-dapp-with-wallet
+- USDT Demo: https://github.com/ton-community/tma-usdt-payments-demo
+
+
+---
+
+## Section 6: Backend
+
+### When You Need a Backend
+
+- User accounts / persistent data
+- Server-side validation (initData)
+- Bot sending messages to users
+- Database (leaderboards, orders, history)
+- Payments verification
+- Admin functionality
+
+For frontend-only apps (games, calculators, viewers), skip the backend.
+
+### Recommended Stacks
+
+**Node.js/TypeScript (primary):**
+| Component | Choice |
+|-----------|--------|
+| HTTP Framework | Express or Fastify |
+| Bot Framework | grammY |
+| ORM | Drizzle or Prisma |
+| Database | PostgreSQL |
+| Cache | Redis |
+| Auth | @telegram-apps/init-data-node |
+
+**Python (alternative):**
+| Component | Choice |
+|-----------|--------|
+| HTTP Framework | FastAPI |
+| Bot Framework | aiogram 3 |
+| ORM | SQLAlchemy 2.0 (async) |
+| Database | PostgreSQL (asyncpg) |
+| Cache | Redis (aioredis) |
+| Auth | Manual HMAC-SHA256 |
+
+### Express + grammY Setup (Node.js)
+
+```typescript
+import express from 'express';
+import cors from 'cors';
+import { Bot, webhookCallback } from 'grammy';
+import { validate, parse } from '@telegram-apps/init-data-node';
+
+const app = express();
+const bot = new Bot(process.env.BOT_TOKEN!);
+
+app.use(cors());
+app.use(express.json());
+
+// Auth middleware
+function authMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('tma ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    validate(authHeader.slice(4), process.env.BOT_TOKEN!);
+    req.telegramUser = parse(authHeader.slice(4)).user;
+    next();
+  } catch {
+    res.status(403).json({ error: 'Invalid auth' });
+  }
+}
+
+// API routes
+app.get('/api/profile', authMiddleware, async (req, res) => {
+  const user = await db.users.findByTelegramId(req.telegramUser.id);
+  res.json(user);
+});
+
+// Bot webhook
+app.use('/webhook/telegram', webhookCallback(bot, 'express'));
+
+// Bot handlers
+bot.command('start', async (ctx) => {
+  await ctx.reply('Open the app:', {
+    reply_markup: {
+      inline_keyboard: [[{
+        text: 'Open Mini App',
+        web_app: { url: process.env.WEBAPP_URL! }
+      }]]
+    }
+  });
+});
+
+// Start server
+app.listen(3000, () => {
+  bot.api.setWebhook(`${process.env.WEBHOOK_URL}/webhook/telegram`, {
+    secret_token: process.env.WEBHOOK_SECRET,
+  });
+});
+```
+
+### FastAPI + aiogram 3 Setup (Python)
+
+```python
+from fastapi import FastAPI, Request, HTTPException, Depends
+from aiogram import Bot, Dispatcher, types
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler
+import json
+from urllib.parse import parse_qs, unquote
+
+app = FastAPI()
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+
+# Auth dependency
+async def get_user(request: Request) -> dict:
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("tma "):
+        raise HTTPException(401)
+    if not validate_init_data(auth[4:], BOT_TOKEN):
+        raise HTTPException(403)
+    params = parse_qs(unquote(auth[4:]))
+    return json.loads(params["user"][0])
+
+# API routes
+@app.get("/api/profile")
+async def profile(user: dict = Depends(get_user)):
+    db_user = await get_or_create_user(user["id"], user)
+    return db_user
+
+# Bot handlers
+@dp.message(commands=["start"])
+async def start(message: types.Message):
+    await message.answer(
+        "Open the app:",
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[[
+            types.InlineKeyboardButton(
+                text="Open Mini App",
+                web_app=types.WebAppInfo(url=WEBAPP_URL)
+            )
+        ]])
+    )
+
+# Webhook setup
+@app.on_event("startup")
+async def on_startup():
+    await bot.set_webhook(f"{WEBHOOK_URL}/webhook/telegram")
+
+@app.post("/webhook/telegram")
+async def telegram_webhook(request: Request):
+    update = types.Update(**await request.json())
+    await dp.feed_update(bot, update)
+    return {"ok": True}
+```
+
+### Database: User Table
+
+```sql
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  telegram_id BIGINT UNIQUE NOT NULL,
+  username VARCHAR(255),
+  first_name VARCHAR(255),
+  last_name VARCHAR(255),
+  language_code VARCHAR(10),
+  is_premium BOOLEAN DEFAULT false,
+  wallet_address TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_users_telegram_id ON users(telegram_id);
+```
+
+Key principles:
+- `telegram_id` is the primary user identifier (no email/password)
+- Upsert on every login: update user data from initData
+- `chat_id = telegram_id` for private chats (needed for sending messages)
+
+### Sending Messages to Users
+
+```typescript
+// Using grammY
+await bot.api.sendMessage(chatId, 'Payment received!');
+
+// With formatting
+await bot.api.sendMessage(chatId, '<b>Order #123</b>\nStatus: Confirmed', {
+  parse_mode: 'HTML',
+});
+
+// With button back to Mini App
+await bot.api.sendMessage(chatId, 'Your order is ready!', {
+  reply_markup: {
+    inline_keyboard: [[{
+      text: 'View Order',
+      web_app: { url: 'https://your-app.com/orders/123' }
+    }]]
+  }
+});
+```
+
+### Telegram Stars (Fiat Payments)
+
+For digital goods, use Telegram Stars (no crypto needed):
+
+```typescript
+// Send invoice
+await bot.api.sendInvoice(chatId, 'Premium Access', 'Unlock all features',
+  'premium_monthly',   // payload
+  'XTR',               // currency: Telegram Stars
+  [{ label: 'Premium', amount: 100 }]
+);
+
+// Handle pre-checkout
+bot.on('pre_checkout_query', async (ctx) => {
+  await ctx.answerPreCheckoutQuery(true);
+});
+
+// Handle payment
+bot.on('message:successful_payment', async (ctx) => {
+  const payment = ctx.message.successful_payment;
+  await activatePremium(ctx.from.id);
+  await ctx.reply('Premium activated!');
+});
+```
+
+### Bot Framework Comparison
+
+| Use Case | Recommended |
+|----------|-------------|
+| New TMA (TypeScript) | **grammY** |
+| Python backend | **aiogram 3** |
+| Serverless (Vercel/CF Workers) | **grammY** |
+| Existing Telegraf project | Migrate to grammY or keep |
+
+grammY advantages: TypeScript-first, best type safety, serverless support, active development.
+
+### Documentation
+
+- grammY: https://grammy.dev/
+- aiogram 3: https://docs.aiogram.dev/
+- Telegram Bot API: https://core.telegram.org/bots/api
+- Telegram Payments: https://core.telegram.org/bots/payments
+- Telegram Stars: https://core.telegram.org/bots/payments-stars
+- Webhooks: https://core.telegram.org/bots/webhooks
+
+
+---
+
+## Section 7: Deployment
+
+### Frontend-Only Deployment
+
+For apps with no backend, deploy as a static site:
+
+**GitHub Pages:**
+1. Build: `npm run build`
+2. Push `dist/` to `gh-pages` branch
+3. Enable Pages in repo settings
+4. URL: `https://username.github.io/repo/`
+
+**Vercel:**
+1. Connect GitHub repo
+2. Framework preset: Vite
+3. Auto-deploys on push
+4. Custom domain supported
+
+**Netlify:**
+1. Connect GitHub repo
+2. Build command: `npm run build`
+3. Publish directory: `dist`
+
+All provide free HTTPS, which Telegram requires.
+
+### Full-Stack: Docker Compose
+
+```yaml
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./frontend/dist:/usr/share/nginx/html
+      - /etc/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+    expose:
+      - "3000"
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: tma
+      POSTGRES_USER: tma
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:
+```
+
+Nginx config:
+```nginx
+server {
+    listen 443 ssl;
+    server_name app.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/app.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/app.example.com/privkey.pem;
+
+    location / {
+        root /usr/share/nginx/html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://backend:3000/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /webhook/telegram {
+        proxy_pass http://backend:3000/webhook/telegram;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+### Coolify (Self-Hosted PaaS)
+
+Coolify provides a Heroku-like experience on your own server:
+1. Deploy frontend as static site service
+2. Deploy backend as Docker service
+3. Add PostgreSQL and Redis as managed databases
+4. Built-in SSL (Let's Encrypt) and reverse proxy (Traefik)
+5. Auto-deploy from GitHub on push
+
+### Pre-Launch Checklist
+
+- [ ] HTTPS configured and working
+- [ ] `Telegram.WebApp.ready()` called on mount
+- [ ] initData validated on backend (if applicable)
+- [ ] Theme colors use `var(--tg-theme-*)` CSS variables
+- [ ] Safe areas handled for notched devices
+- [ ] Tested on iOS, Android, and Desktop
+- [ ] Bot webhook registered and responding
+- [ ] MainButton/BackButton work correctly
+- [ ] CloudStorage used for persistent data (not just localStorage)
+- [ ] Error handling doesn't show raw errors to users
+
+
+---
+
+## Section 8: Testing and Development
+
+### Local Development with ngrok
+
+The recommended workflow:
+
+1. Start your dev server: `npm run dev` (Vite, usually port 5173)
+2. Start ngrok: `ngrok http --url your-name.ngrok-free.dev 5173`
+3. BotFather URL: `https://your-name.ngrok-free.dev`
+4. Open in Telegram → test → make changes → instant reload (Vite HMR)
+
+The ngrok free static domain means you set the BotFather URL once and never change it.
+
+### Mock initData for Browser Testing
+
+During development, test in a regular browser without Telegram:
+
+In your `.env`:
+```
+VITE_DEV_INIT_DATA=query_id=test&user=%7B%22id%22%3A0%2C%22first_name%22%3A%22Test%22%2C%22username%22%3A%22testuser%22%7D&auth_date=1700000000&hash=test
+```
+
+In your app init:
+```typescript
+const initData = import.meta.env.VITE_DEV_INIT_DATA || window.Telegram?.WebApp?.initData;
+```
+
+This lets you develop in a browser with hot reload, then test in Telegram for final verification.
+
+### Test User Pattern
+
+Use `telegram_id = 0` as a test user:
+- Backend skips auth_date expiration check for id=0
+- Still validates HMAC signature
+- Allows automated testing without a real Telegram account
+- Never deploy to production with this bypass
+
+### Debugging
+
+**Android:**
+1. Settings → Advanced → Enable WebView Debug
+2. Open Chrome on desktop: `chrome://inspect`
+3. Find your Mini App under "Remote Target"
+4. Full Chrome DevTools access
+
+**iOS:**
+1. In Telegram iOS, tap Settings icon 10 times rapidly
+2. Enable "WebView Inspection"
+3. Connect iPhone to Mac
+4. Open Safari → Develop menu → select device → select WebView
+
+**Desktop (macOS/Windows/Linux):**
+1. Settings → Advanced → Experimental Settings
+2. Enable WebView inspection
+3. Right-click in Mini App → Inspect Element
+
+**Universal Fallback — Eruda:**
+```html
+<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+<script>eruda.init();</script>
+```
+Adds a floating DevTools button to your app. Works on all platforms. Remove before production.
+
+### Browser Automation for TMA Testing
+
+For automated testing, use Playwright:
+
+```typescript
+import { test, expect } from '@playwright/test';
+
+test('TMA loads and shows user', async ({ page }) => {
+  // Navigate with mock initData in hash
+  await page.goto('http://localhost:5173#tgWebAppData=...');
+  await expect(page.locator('h1')).toContainText('Hello');
+});
+```
+
+### Documentation
+
+- Debugging: https://docs.telegram-mini-apps.com/platform/debugging
+- Test Environment: https://core.telegram.org/bots/webapps#using-bots-in-the-test-environment
+
+
+---
+
+## Section 9: Best Practices
+
+### 1. Call `ready()` Immediately
+
+```typescript
+// Do this FIRST, before any async operations
+Telegram.WebApp.ready();
+// or with community SDK:
+miniApp.ready();
+```
+
+If you don't call `ready()`, the loading spinner stays forever. Call it on mount, not after data loads.
+
+### 2. Save Launch Params at Startup
+
+```typescript
+// Hash routing OVERWRITES window.location.hash
+// which contains tgWebAppData, tgWebAppVersion, etc.
+// Save BEFORE setting up React Router or any hash-based routing
+
+const launchParams = window.location.hash;
+// or
+const initData = new URLSearchParams(window.location.hash.slice(1)).get('tgWebAppData');
+```
+
+### 3. Design for Session Interruption
+
+Mobile users switch apps constantly. The OS may kill your WebView at any time.
+
+- Save state progressively (after each meaningful action)
+- Use CloudStorage for important data (synced across devices)
+- Don't rely on `beforeunload` — it may not fire
+- On re-entry, restore state from storage
+
+### 4. Validate initData Server-Side
+
+Never trust client-side data. Always validate the HMAC-SHA256 signature on your backend. The `initDataUnsafe` object on the client is for display only.
+
+### 5. Use CSS Variables for Theming
+
+```css
+/* DO */
+background: var(--tg-theme-bg-color);
+color: var(--tg-theme-text-color);
+
+/* DON'T */
+background: #ffffff;
+color: #000000;
+```
+
+### 6. Test on All Platforms
+
+TMAs behave differently on iOS, Android, Desktop, and Web clients. Common differences:
+- iOS: SafeAreaInsets, different keyboard behavior
+- Android: Back button behavior, different haptics
+- Desktop: No haptics, different viewport size
+- Web: Limited features, no biometrics
+
+### 7. Handle Dark Mode
+
+Telegram supports light and dark themes. Your app should too:
+
+```css
+/* The theme variables update automatically */
+body {
+  background: var(--tg-theme-bg-color);
+  color: var(--tg-theme-text-color);
+}
+
+/* For custom elements, listen to theme changes */
+```
+
+```typescript
+miniApp.on('themeChanged', () => {
+  // Update any non-CSS theme-dependent logic
+});
+```
+
+### 8. Use Expand for Full Height
+
+```typescript
+Telegram.WebApp.expand();
+// or
+miniApp.expand();
+```
+
+By default, the Mini App opens at half height. Call `expand()` to use the full screen.
+
+### 9. Check Method Availability
+
+```typescript
+// Community SDK
+if (hapticFeedback.isAvailable()) {
+  hapticFeedback.impactOccurred('medium');
+}
+
+// Official script
+if (Telegram.WebApp.HapticFeedback) {
+  Telegram.WebApp.HapticFeedback.impactOccurred('medium');
+}
+```
+
+### 10. Progressive Enhancement
+
+Build your app to work without Telegram features, then enhance:
+
+```typescript
+const isTelegram = !!window.Telegram?.WebApp?.initData;
+
+if (isTelegram) {
+  // Use TMA features: haptics, theme, CloudStorage
+} else {
+  // Fallback: standard web behavior
+}
+```
+
+
+---
+
+## Section 10: Reference Links
+
+### Official Documentation
+
+| Resource | URL |
+|----------|-----|
+| Telegram Mini Apps Docs | https://core.telegram.org/bots/webapps |
+| Bot API | https://core.telegram.org/bots/api |
+| Payments | https://core.telegram.org/bots/payments |
+| Telegram Stars | https://core.telegram.org/bots/payments-stars |
+| Webhooks | https://core.telegram.org/bots/webhooks |
+| Blockchain Guidelines | https://core.telegram.org/bots/blockchain-guidelines |
+
+### Community Documentation
+
+| Resource | URL |
+|----------|-----|
+| TMA Docs (Community) | https://docs.telegram-mini-apps.com/ |
+| Platform Overview | https://docs.telegram-mini-apps.com/platform/about |
+| Init Data | https://docs.telegram-mini-apps.com/platform/init-data |
+| Methods | https://docs.telegram-mini-apps.com/platform/methods |
+| Events | https://docs.telegram-mini-apps.com/platform/events |
+| Debugging | https://docs.telegram-mini-apps.com/platform/debugging |
+
+### SDK Packages
+
+| Package | Purpose | URL |
+|---------|---------|-----|
+| @telegram-apps/sdk | Core TMA SDK v3 | https://docs.telegram-mini-apps.com/packages/telegram-apps-sdk/3-x |
+| @telegram-apps/sdk-react | React bindings | https://docs.telegram-mini-apps.com/packages/telegram-apps-sdk-react/2-x |
+| @telegram-apps/init-data-node | Server-side validation | https://docs.telegram-mini-apps.com/packages/telegram-apps-init-data-node |
+| @tonconnect/ui-react | TON Connect React | https://docs.ton.org/v3/guidelines/ton-connect/frameworks/react |
+| @ton/ton | TON blockchain SDK | https://www.npmjs.com/package/@ton/ton |
+| @ton-api/client | TONAPI REST client | https://docs.tonconsole.com/tonapi/rest-api |
+
+### TON Documentation
+
+| Resource | URL |
+|----------|-----|
+| TON Connect Overview | https://docs.ton.org/ecosystem/ton-connect/overview |
+| TON Connect React | https://docs.ton.org/v3/guidelines/ton-connect/frameworks/react |
+| Creating Manifest | https://docs.ton.org/v3/guidelines/ton-connect/creating-manifest |
+| Preparing Messages | https://docs.ton.org/v3/guidelines/ton-connect/guidelines/preparing-messages |
+| Jetton Transfer | https://docs.ton.org/v3/guidelines/ton-connect/cookbook/jetton-transfer |
+| TONAPI REST | https://docs.tonconsole.com/tonapi/rest-api |
+
+### Bot Frameworks
+
+| Framework | Language | URL |
+|-----------|----------|-----|
+| grammY | TypeScript | https://grammy.dev/ |
+| aiogram 3 | Python | https://docs.aiogram.dev/ |
+| python-telegram-bot | Python | https://python-telegram-bot.org/ |
+
+### GitHub Repositories
+
+| Repo | Description | URL |
+|------|-------------|-----|
+| Telegram Mini Apps | Official TMA GitHub org | https://github.com/telegram-mini-apps |
+| TON Connect SDK | TON Connect protocol | https://github.com/ton-connect/sdk |
+| TON Connect Demo dApp | Reference React app | https://github.com/ton-connect/demo-dapp-with-wallet |
+| TMA USDT Payments Demo | Jetton payments example | https://github.com/ton-community/tma-usdt-payments-demo |
+| TMA Step-by-Step Guide | TON Foundation guide | https://docs.ton.org/v3/guidelines/dapps/tma/tutorials/step-by-step-guide |
+
+### npm Packages
+
+| Package | npm |
+|---------|-----|
+| @telegram-apps/sdk | https://www.npmjs.com/package/@telegram-apps/sdk |
+| @telegram-apps/sdk-react | https://www.npmjs.com/package/@telegram-apps/sdk-react |
+| @telegram-apps/init-data-node | https://www.npmjs.com/package/@telegram-apps/init-data-node |
+| @tonconnect/ui-react | https://www.npmjs.com/package/@tonconnect/ui-react |
+| @ton/ton | https://www.npmjs.com/package/@ton/ton |
+| @ton-api/client | https://www.npmjs.com/package/@ton-api/client |
+| grammy | https://www.npmjs.com/package/grammy |
