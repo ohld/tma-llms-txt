@@ -63,12 +63,12 @@
 ## Testing & Debugging
 - [Debugging Guide](https://docs.telegram-mini-apps.com/platform/debugging) — Chrome/Safari/Eruda setup
 - [Test Environment](https://core.telegram.org/bots/webapps#using-bots-in-the-test-environment) — Telegram test mode
-- [Mock initData](llms-full.txt) — VITE_DEV_INIT_DATA pattern for browser testing (Section 8)
+- [Mock Environment](llms-full.txt) — mockTelegramEnv + retrieveLaunchParams pattern for browser testing (Section 8)
 - [Test User](llms-full.txt) — id=0 pattern for automated testing (Section 8)
 
 ## Best Practices
 - [Production Patterns](llms-full.txt) — lazy SDK loading, auth expiry, share fallbacks (Section 9)
-- [Common LLM Mistakes](llms-full.txt) — top 10 mistakes AI agents make (Section 0)
+- [Common LLM Mistakes](llms-full.txt) — top 11 mistakes AI agents make (Section 0)
 
 ## GitHub & npm
 - [TMA GitHub Org](https://github.com/telegram-mini-apps) — official repositories

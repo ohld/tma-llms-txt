@@ -69,6 +69,7 @@ The backend validates this header using HMAC-SHA256.
 8. **Hardcoding colors** — use `var(--tg-theme-*)` CSS variables. Telegram has light/dark themes and custom colors.
 9. **Not checking method availability** — some methods require specific Telegram versions. Check with `isAvailable()` or version comparison before calling.
 10. **Ignoring safe areas** — notched devices (iPhone, modern Android) need safe area insets. Use `env(safe-area-inset-*)` CSS.
+11. **Gating mockTelegramEnv on DEV only** — `if (import.meta.env.DEV) { mockTelegramEnv(...) }` breaks production builds opened in a browser (Vercel preview, direct link). Instead, try `retrieveLaunchParams()` and mock only when it throws (see Section 8).
 
 
 ---
@@ -260,32 +261,70 @@ npm install
 npm install @tma.js/sdk-react
 ```
 
+Create `src/mockEnv.ts` — mock Telegram environment when opened outside Telegram:
+```typescript
+import { mockTelegramEnv, retrieveLaunchParams } from '@tma.js/sdk-react';
+
+try {
+  retrieveLaunchParams();
+} catch {
+  mockTelegramEnv({
+    launchParams: {
+      tgWebAppVersion: '8.0',
+      tgWebAppPlatform: 'tdesktop',
+      tgWebAppThemeParams: {
+        bg_color: '#ffffff',
+        text_color: '#000000',
+        hint_color: '#999999',
+        link_color: '#3390ec',
+        button_color: '#3390ec',
+        button_text_color: '#ffffff',
+        secondary_bg_color: '#f0f0f0',
+        header_bg_color: '#ffffff',
+        accent_text_color: '#3390ec',
+        section_bg_color: '#ffffff',
+        section_header_text_color: '#3390ec',
+        subtitle_text_color: '#999999',
+        destructive_text_color: '#e53935',
+      },
+    },
+  });
+}
+```
+
+> **Why try/catch instead of `if (DEV)`?** — `import.meta.env.DEV` is false in production.
+> If you deploy to Vercel or any static host and open the URL in a browser (not Telegram),
+> the SDK will crash with `LaunchParamsRetrieveError`. The try/catch pattern works in both
+> dev and production: real Telegram provides launch params, browsers get the mock.
+
 In `src/main.tsx`:
 ```tsx
-import { StrictMode } from 'react';
+import './mockEnv';
+import { init, miniApp, themeParams } from '@tma.js/sdk-react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-);
+init();
+
+miniApp.mount();
+miniApp.bindCssVars();
+
+themeParams.mount();
+themeParams.bindCssVars();
+
+miniApp.ready();
+
+createRoot(document.getElementById('root')!).render(<App />);
 ```
+
+Key points:
+- `import './mockEnv'` must be the first import (sets up env before SDK reads it)
+- `bindCssVars()` auto-maps Telegram theme to CSS variables `var(--tg-theme-*)`
+- `ready()` tells Telegram the app is loaded (hides loading spinner)
 
 In `src/App.tsx`:
 ```tsx
-import { useEffect } from 'react';
-import { init, miniApp, backButton } from '@tma.js/sdk-react';
-
 function App() {
-  useEffect(() => {
-    init();
-    miniApp.mount();
-    miniApp.ready();
-    backButton.mount();
-  }, []);
-
   return (
     <div style={{
       padding: 16,
@@ -299,11 +338,6 @@ function App() {
 }
 
 export default App;
-```
-
-In `index.html`, add before closing `</head>`:
-```html
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
 ```
 
 
@@ -1270,6 +1304,7 @@ For apps with no backend, deploy as a static site:
 2. Framework preset: Vite
 3. Auto-deploys on push
 4. Custom domain supported
+5. **Important:** if using `@tma.js/sdk-react`, add `mockEnv.ts` with the try/catch pattern (see Section 8). Without it, the Vercel preview URL shows a white screen because the SDK crashes outside Telegram.
 
 **Netlify:**
 1. Connect GitHub repo
@@ -1387,21 +1422,58 @@ The recommended workflow:
 
 The ngrok free static domain means you set the BotFather URL once and never change it.
 
-### Mock initData for Browser Testing
+### Mock Environment for Browser Testing
 
-During development, test in a regular browser without Telegram:
+When using `@tma.js/sdk-react`, mock the Telegram environment so the app works in a regular browser (local dev, Vercel preview, etc.):
 
-In your `.env`:
+```typescript
+// src/mockEnv.ts
+import { mockTelegramEnv, retrieveLaunchParams } from '@tma.js/sdk-react';
+
+try {
+  retrieveLaunchParams();
+} catch {
+  mockTelegramEnv({
+    launchParams: {
+      tgWebAppVersion: '8.0',
+      tgWebAppPlatform: 'tdesktop',
+      tgWebAppThemeParams: {
+        bg_color: '#ffffff',
+        text_color: '#000000',
+        hint_color: '#999999',
+        link_color: '#3390ec',
+        button_color: '#3390ec',
+        button_text_color: '#ffffff',
+        secondary_bg_color: '#f0f0f0',
+        header_bg_color: '#ffffff',
+        accent_text_color: '#3390ec',
+        section_bg_color: '#ffffff',
+        section_header_text_color: '#3390ec',
+        subtitle_text_color: '#999999',
+        destructive_text_color: '#e53935',
+      },
+    },
+  });
+}
+```
+
+Import it as the **first line** in `main.tsx`: `import './mockEnv';`
+
+> **Do NOT gate this with `import.meta.env.DEV`.** That breaks production builds opened
+> outside Telegram (white screen + `LaunchParamsRetrieveError`). The try/catch pattern
+> works everywhere: inside Telegram it uses real params, outside it uses the mock.
+
+**Alternative: mock initData for backend testing**
+
+If you only need mock `initData` (not the full SDK environment), use an env variable:
+
 ```
 VITE_DEV_INIT_DATA=query_id=test&user=%7B%22id%22%3A0%2C%22first_name%22%3A%22Test%22%2C%22username%22%3A%22testuser%22%7D&auth_date=1700000000&hash=test
 ```
 
-In your app init:
 ```typescript
 const initData = import.meta.env.VITE_DEV_INIT_DATA || window.Telegram?.WebApp?.initData;
 ```
-
-This lets you develop in a browser with hot reload, then test in Telegram for final verification.
 
 ### Test User Pattern
 
