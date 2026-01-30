@@ -21,7 +21,7 @@ The guide covers the full TMA development stack:
 
 - **Agent Instructions** — decision tree, scaffold steps, top 10 LLM mistakes
 - **Getting Started** — BotFather setup, ngrok for local HTTPS, Hello World
-- **Frontend** — Telegram SDK (official + community), MainButton, theming, storage
+- **Frontend** — @tma.js/sdk (official + community), MainButton, theming, storage
 - **Authentication** — initData, HMAC-SHA256 validation (Node.js + Python)
 - **TON Connect** — wallet connection, TON/jetton transfers, TONAPI
 - **Backend** — Express + grammY (Node.js) or FastAPI + aiogram 3 (Python)

@@ -2,7 +2,7 @@
 
 > This file is designed to be fed to AI coding assistants (Claude Code, Cursor, ChatGPT, etc.)
 > to build Telegram Mini Apps from scratch. Read Section 0 first.
-> Version: 1.0 | Updated: January 2026
+> Version: 1.1 | Updated: January 2026
 > Source: https://github.com/ohld/tma-llms-txt
 
 
@@ -31,7 +31,7 @@ When a developer asks you to build a Telegram Mini App (TMA), follow this decisi
 
 For **frontend-only** TMA:
 1. Create project: `npm create vite@latest myapp -- --template react-ts` (or vanilla)
-2. Install SDK: `npm i @telegram-apps/sdk-react`
+2. Install SDK: `npm i @tma.js/sdk-react`
 3. Add `telegram-web-app.js` script tag to `index.html`
 4. Call `Telegram.WebApp.ready()` on mount
 5. Set up ngrok for local HTTPS: `ngrok http --url your-name.ngrok-free.dev 3000`
@@ -257,7 +257,7 @@ For anything beyond a simple page:
 npm create vite@latest my-tma -- --template react-ts
 cd my-tma
 npm install
-npm install @telegram-apps/sdk-react
+npm install @tma.js/sdk-react
 ```
 
 In `src/main.tsx`:
@@ -276,7 +276,7 @@ createRoot(document.getElementById('root')!).render(
 In `src/App.tsx`:
 ```tsx
 import { useEffect } from 'react';
-import { init, miniApp, backButton } from '@telegram-apps/sdk-react';
+import { init, miniApp, backButton } from '@tma.js/sdk-react';
 
 function App() {
   useEffect(() => {
@@ -325,19 +325,23 @@ Two options for interacting with Telegram from your frontend:
 
 **Option B: Community SDK (Recommended for React/Vue)**
 ```bash
-npm i @telegram-apps/sdk          # Core (v3.x)
-npm i @telegram-apps/sdk-react    # React bindings
-npm i @telegram-apps/sdk-vue      # Vue bindings
+npm i @tma.js/sdk          # Core (v3.x)
+npm i @tma.js/sdk-react    # React bindings
+npm i @tma.js/sdk-vue      # Vue bindings
 ```
 - Full TypeScript support
 - Reactive signals pattern
 - `isAvailable()` checks for method support
 - Framework-specific hooks
 
+> **Note:** The SDK was renamed from `@telegram-apps/sdk` to `@tma.js/sdk`.
+> If migrating an existing project, see the migration guide:
+> https://docs.telegram-mini-apps.com/packages/tma-js-sdk/migrate-from-telegram-apps
+
 ### Initialization with Community SDK (React)
 
 ```tsx
-import { init, miniApp, backButton, mainButton } from '@telegram-apps/sdk-react';
+import { init, miniApp, backButton, mainButton } from '@tma.js/sdk-react';
 
 // Call once at app startup
 init();
@@ -362,7 +366,7 @@ Key concept: **Scopes**. Each SDK feature is a "scope" (backButton, miniApp, mai
 The persistent button at the bottom of the screen:
 
 ```tsx
-import { mainButton } from '@telegram-apps/sdk-react';
+import { mainButton } from '@tma.js/sdk-react';
 
 // Show
 mainButton.setParams({
@@ -385,7 +389,7 @@ off(); // remove listener
 ### BackButton
 
 ```tsx
-import { backButton } from '@telegram-apps/sdk-react';
+import { backButton } from '@tma.js/sdk-react';
 
 backButton.show();
 
@@ -401,7 +405,7 @@ backButton.hide();
 ### Popups and Alerts
 
 ```tsx
-import { popup, hapticFeedback } from '@telegram-apps/sdk-react';
+import { popup, hapticFeedback } from '@tma.js/sdk-react';
 
 // Alert
 await popup.open({ message: 'Hello!' });
@@ -421,7 +425,7 @@ if (result === 'ok') { /* confirmed */ }
 ### Haptic Feedback
 
 ```tsx
-import { hapticFeedback } from '@telegram-apps/sdk-react';
+import { hapticFeedback } from '@tma.js/sdk-react';
 
 hapticFeedback.impactOccurred('medium');     // light, medium, heavy, rigid, soft
 hapticFeedback.notificationOccurred('success'); // success, error, warning
@@ -481,7 +485,7 @@ The Telegram SDK also provides `safeAreaInset` and `contentSafeAreaInset` values
 
 ```tsx
 // CloudStorage
-import { cloudStorage } from '@telegram-apps/sdk-react';
+import { cloudStorage } from '@tma.js/sdk-react';
 
 await cloudStorage.setItem('score', '100');
 const score = await cloudStorage.getItem('score');
@@ -491,7 +495,7 @@ await cloudStorage.removeItem('score');
 ### Navigation
 
 ```tsx
-import { openLink, openTelegramLink } from '@telegram-apps/sdk-react';
+import { openLink, openTelegramLink } from '@tma.js/sdk-react';
 
 // Open external URL (in browser)
 openLink('https://example.com');
@@ -502,9 +506,10 @@ openTelegramLink('https://t.me/username');
 
 ### Documentation
 
-- SDK v3: https://docs.telegram-mini-apps.com/packages/telegram-apps-sdk/3-x
-- React SDK: https://docs.telegram-mini-apps.com/packages/telegram-apps-sdk-react/2-x
+- SDK v3: https://docs.telegram-mini-apps.com/packages/tma-js-sdk
+- React SDK: https://docs.telegram-mini-apps.com/packages/tma-js-sdk-react
 - Official Script: https://core.telegram.org/bots/webapps#initializing-mini-apps
+- Migration from @telegram-apps: https://docs.telegram-mini-apps.com/packages/tma-js-sdk/migrate-from-telegram-apps
 
 
 ---
@@ -746,7 +751,7 @@ Good for: complex apps, many API calls, third-party service integration.
 
 - Init Data: https://docs.telegram-mini-apps.com/platform/init-data
 - Authorizing User: https://docs.telegram-mini-apps.com/platform/authorizing-user
-- @telegram-apps/init-data-node: https://docs.telegram-mini-apps.com/packages/telegram-apps-init-data-node
+- @telegram-apps/init-data-node: https://www.npmjs.com/package/@telegram-apps/init-data-node
 
 
 ---
@@ -854,20 +859,25 @@ function WalletInfo() {
 
 ```tsx
 import { toNano } from '@ton/ton';
+import { useTonConnectUI } from '@tonconnect/ui-react';
 
-async function sendTon() {
+// Inside a React component:
+function SendTonButton() {
   const [tonConnectUI] = useTonConnectUI();
 
-  const tx = {
-    validUntil: Math.floor(Date.now() / 1000) + 360,
-    messages: [{
-      address: 'EQDestinationAddress...',
-      amount: toNano('0.5').toString(),
-    }],
-  };
+  async function sendTon() {
+    const tx = {
+      validUntil: Math.floor(Date.now() / 1000) + 360,
+      messages: [{
+        address: 'EQDestinationAddress...',
+        amount: toNano('0.5').toString(),
+      }],
+    };
+    const result = await tonConnectUI.sendTransaction(tx);
+    // result.boc contains the signed transaction
+  }
 
-  const result = await tonConnectUI.sendTransaction(tx);
-  // result.boc contains the signed transaction
+  return <button onClick={sendTon}>Send 0.5 TON</button>;
 }
 ```
 
@@ -986,7 +996,7 @@ const events = await ta.accounts.getAccountEvents(address, { limit: 20 });
 {
   "dependencies": {
     "@tonconnect/ui-react": "^2.0.3",
-    "@ton/ton": "^15.0.0",
+    "@ton/ton": "^16.0.0",
     "@ton/core": "^0.58.0",
     "@ton/crypto": "^3.3.0",
     "@ton-api/client": "^0.4.0"
@@ -1060,23 +1070,9 @@ const bot = new Bot(process.env.BOT_TOKEN!);
 app.use(cors());
 app.use(express.json());
 
-// Auth middleware
-function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('tma ')) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  try {
-    validate(authHeader.slice(4), process.env.BOT_TOKEN!);
-    req.telegramUser = parse(authHeader.slice(4)).user;
-    next();
-  } catch {
-    res.status(403).json({ error: 'Invalid auth' });
-  }
-}
-
+// Auth middleware (see Section 4 for full implementation)
 // API routes
-app.get('/api/profile', authMiddleware, async (req, res) => {
+app.get('/api/profile', telegramAuthMiddleware, async (req, res) => {
   const user = await db.users.findByTelegramId(req.telegramUser.id);
   res.json(user);
 });
@@ -1107,23 +1103,33 @@ app.listen(3000, () => {
 ### FastAPI + aiogram 3 Setup (Python)
 
 ```python
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi.security import APIKeyHeader
 from aiogram import Bot, Dispatcher, types
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler
+from aiogram.filters import Command
 import json
 from urllib.parse import parse_qs, unquote
 
-app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Auth dependency
-async def get_user(request: Request) -> dict:
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("tma "):
-        raise HTTPException(401)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await bot.set_webhook(f"{WEBHOOK_URL}/webhook/telegram")
+    yield
+    await bot.delete_webhook()
+
+app = FastAPI(lifespan=lifespan)
+
+# Auth dependency — APIKeyHeader adds an "Authorize" button in /docs (Swagger UI)
+authorization_header = APIKeyHeader(name="Authorization", auto_error=False)
+
+async def get_user(auth: str = Depends(authorization_header)) -> dict:
+    if not auth or not auth.startswith("tma "):
+        raise HTTPException(401, "Missing Telegram auth")
     if not validate_init_data(auth[4:], BOT_TOKEN):
-        raise HTTPException(403)
+        raise HTTPException(403, "Invalid initData")
     params = parse_qs(unquote(auth[4:]))
     return json.loads(params["user"][0])
 
@@ -1134,7 +1140,7 @@ async def profile(user: dict = Depends(get_user)):
     return db_user
 
 # Bot handlers
-@dp.message(commands=["start"])
+@dp.message(Command("start"))
 async def start(message: types.Message):
     await message.answer(
         "Open the app:",
@@ -1145,11 +1151,6 @@ async def start(message: types.Message):
             )
         ]])
     )
-
-# Webhook setup
-@app.on_event("startup")
-async def on_startup():
-    await bot.set_webhook(f"{WEBHOOK_URL}/webhook/telegram")
 
 @app.post("/webhook/telegram")
 async def telegram_webhook(request: Request):
@@ -1458,109 +1459,115 @@ test('TMA loads and shows user', async ({ page }) => {
 
 ---
 
-## Section 9: Best Practices
+## Section 9: Best Practices & Production Patterns
 
-### 1. Call `ready()` Immediately
+> For common LLM mistakes (ready(), launch params, initData validation, hardcoded colors, safe areas), see **Section 0**.
+> This section covers additional patterns from production TMAs.
 
-```typescript
-// Do this FIRST, before any async operations
-Telegram.WebApp.ready();
-// or with community SDK:
-miniApp.ready();
-```
+### Test on All Platforms
 
-If you don't call `ready()`, the loading spinner stays forever. Call it on mount, not after data loads.
-
-### 2. Save Launch Params at Startup
-
-```typescript
-// Hash routing OVERWRITES window.location.hash
-// which contains tgWebAppData, tgWebAppVersion, etc.
-// Save BEFORE setting up React Router or any hash-based routing
-
-const launchParams = window.location.hash;
-// or
-const initData = new URLSearchParams(window.location.hash.slice(1)).get('tgWebAppData');
-```
-
-### 3. Design for Session Interruption
-
-Mobile users switch apps constantly. The OS may kill your WebView at any time.
-
-- Save state progressively (after each meaningful action)
-- Use CloudStorage for important data (synced across devices)
-- Don't rely on `beforeunload` — it may not fire
-- On re-entry, restore state from storage
-
-### 4. Validate initData Server-Side
-
-Never trust client-side data. Always validate the HMAC-SHA256 signature on your backend. The `initDataUnsafe` object on the client is for display only.
-
-### 5. Use CSS Variables for Theming
-
-```css
-/* DO */
-background: var(--tg-theme-bg-color);
-color: var(--tg-theme-text-color);
-
-/* DON'T */
-background: #ffffff;
-color: #000000;
-```
-
-### 6. Test on All Platforms
-
-TMAs behave differently on iOS, Android, Desktop, and Web clients. Common differences:
+TMAs behave differently on iOS, Android, Desktop, and Web clients:
 - iOS: SafeAreaInsets, different keyboard behavior
 - Android: Back button behavior, different haptics
-- Desktop: No haptics, different viewport size
+- Desktop: No haptics, different viewport size, prefer windowed mode (not fullscreen)
 - Web: Limited features, no biometrics
 
-### 7. Handle Dark Mode
+### Lazy-Load the SDK
 
-Telegram supports light and dark themes. Your app should too:
-
-```css
-/* The theme variables update automatically */
-body {
-  background: var(--tg-theme-bg-color);
-  color: var(--tg-theme-text-color);
-}
-
-/* For custom elements, listen to theme changes */
-```
+Load the SDK dynamically to avoid blocking the initial render:
 
 ```typescript
-miniApp.on('themeChanged', () => {
-  // Update any non-CSS theme-dependent logic
-});
-```
+async function initTelegram() {
+  const { isTMA, init, miniApp, viewport, swipeBehavior, closingBehavior }
+    = await import('@tma.js/sdk');
 
-### 8. Use Expand for Full Height
+  if (!await isTMA()) return; // not running in Telegram
 
-```typescript
-Telegram.WebApp.expand();
-// or
-miniApp.expand();
-```
+  init();
+  miniApp.mount();
+  miniApp.ready();
 
-By default, the Mini App opens at half height. Call `expand()` to use the full screen.
+  // viewport.mount() can hang on macOS — use a timeout
+  try {
+    await Promise.race([
+      viewport.mount(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
+    ]);
+    if (!viewport.isFullscreen()) viewport.expand();
+  } catch {
+    // mount timed out (macOS desktop), continue without viewport
+  }
 
-### 9. Check Method Availability
+  // For games: disable pull-to-close gesture
+  if (swipeBehavior.mount.isAvailable()) {
+    swipeBehavior.mount();
+    swipeBehavior.disableVertical();
+  }
 
-```typescript
-// Community SDK
-if (hapticFeedback.isAvailable()) {
-  hapticFeedback.impactOccurred('medium');
-}
-
-// Official script
-if (Telegram.WebApp.HapticFeedback) {
-  Telegram.WebApp.HapticFeedback.impactOccurred('medium');
+  // Warn before closing (unsaved state)
+  if (closingBehavior.mount.isAvailable()) {
+    closingBehavior.mount();
+    closingBehavior.enableConfirmation();
+  }
 }
 ```
 
-### 10. Progressive Enhancement
+### Fullscreen: Mobile Only
+
+Desktop users expect windowed Mini Apps. Only request fullscreen on mobile:
+
+```typescript
+if (viewport.requestFullscreen.isAvailable()) {
+  const platform = miniApp.platform(); // "ios", "android", "macos", "tdesktop", "web"
+  if (platform === 'ios' || platform === 'android') {
+    viewport.requestFullscreen();
+  }
+}
+```
+
+### Auth Expiry Handling
+
+When initData expires mid-session (user left the app open), return HTTP 498 so the frontend can prompt re-launch:
+
+```typescript
+// Backend: return 498 when auth_date is too old
+if (Date.now() / 1000 - authDate > 86400) {
+  return res.status(498).json({ error: 'Auth expired, reopen the app' });
+}
+
+// Frontend: handle 498
+if (response.status === 498) {
+  showPopup('Session expired. Please reopen the app from Telegram.');
+}
+```
+
+### Share with Fallbacks
+
+Telegram share APIs vary by platform. Use a fallback chain:
+
+```typescript
+async function share(text: string, url: string) {
+  try {
+    // 1. TMA SDK shareMessage (newest, not always available)
+    const { shareMessage } = await import('@tma.js/sdk');
+    if (shareMessage.isAvailable()) {
+      await shareMessage(text);
+      return;
+    }
+  } catch {}
+
+  // 2. Web Share API (works on mobile browsers and some desktop)
+  if (navigator.share) {
+    await navigator.share({ text, url });
+    return;
+  }
+
+  // 3. Telegram link fallback (always works)
+  window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`);
+}
+```
+
+### Progressive Enhancement
 
 Build your app to work without Telegram features, then enhance:
 
@@ -1573,82 +1580,3 @@ if (isTelegram) {
   // Fallback: standard web behavior
 }
 ```
-
-
----
-
-## Section 10: Reference Links
-
-### Official Documentation
-
-| Resource | URL |
-|----------|-----|
-| Telegram Mini Apps Docs | https://core.telegram.org/bots/webapps |
-| Bot API | https://core.telegram.org/bots/api |
-| Payments | https://core.telegram.org/bots/payments |
-| Telegram Stars | https://core.telegram.org/bots/payments-stars |
-| Webhooks | https://core.telegram.org/bots/webhooks |
-| Blockchain Guidelines | https://core.telegram.org/bots/blockchain-guidelines |
-
-### Community Documentation
-
-| Resource | URL |
-|----------|-----|
-| TMA Docs (Community) | https://docs.telegram-mini-apps.com/ |
-| Platform Overview | https://docs.telegram-mini-apps.com/platform/about |
-| Init Data | https://docs.telegram-mini-apps.com/platform/init-data |
-| Methods | https://docs.telegram-mini-apps.com/platform/methods |
-| Events | https://docs.telegram-mini-apps.com/platform/events |
-| Debugging | https://docs.telegram-mini-apps.com/platform/debugging |
-
-### SDK Packages
-
-| Package | Purpose | URL |
-|---------|---------|-----|
-| @telegram-apps/sdk | Core TMA SDK v3 | https://docs.telegram-mini-apps.com/packages/telegram-apps-sdk/3-x |
-| @telegram-apps/sdk-react | React bindings | https://docs.telegram-mini-apps.com/packages/telegram-apps-sdk-react/2-x |
-| @telegram-apps/init-data-node | Server-side validation | https://docs.telegram-mini-apps.com/packages/telegram-apps-init-data-node |
-| @tonconnect/ui-react | TON Connect React | https://docs.ton.org/v3/guidelines/ton-connect/frameworks/react |
-| @ton/ton | TON blockchain SDK | https://www.npmjs.com/package/@ton/ton |
-| @ton-api/client | TONAPI REST client | https://docs.tonconsole.com/tonapi/rest-api |
-
-### TON Documentation
-
-| Resource | URL |
-|----------|-----|
-| TON Connect Overview | https://docs.ton.org/ecosystem/ton-connect/overview |
-| TON Connect React | https://docs.ton.org/v3/guidelines/ton-connect/frameworks/react |
-| Creating Manifest | https://docs.ton.org/v3/guidelines/ton-connect/creating-manifest |
-| Preparing Messages | https://docs.ton.org/v3/guidelines/ton-connect/guidelines/preparing-messages |
-| Jetton Transfer | https://docs.ton.org/v3/guidelines/ton-connect/cookbook/jetton-transfer |
-| TONAPI REST | https://docs.tonconsole.com/tonapi/rest-api |
-
-### Bot Frameworks
-
-| Framework | Language | URL |
-|-----------|----------|-----|
-| grammY | TypeScript | https://grammy.dev/ |
-| aiogram 3 | Python | https://docs.aiogram.dev/ |
-| python-telegram-bot | Python | https://python-telegram-bot.org/ |
-
-### GitHub Repositories
-
-| Repo | Description | URL |
-|------|-------------|-----|
-| Telegram Mini Apps | Official TMA GitHub org | https://github.com/telegram-mini-apps |
-| TON Connect SDK | TON Connect protocol | https://github.com/ton-connect/sdk |
-| TON Connect Demo dApp | Reference React app | https://github.com/ton-connect/demo-dapp-with-wallet |
-| TMA USDT Payments Demo | Jetton payments example | https://github.com/ton-community/tma-usdt-payments-demo |
-| TMA Step-by-Step Guide | TON Foundation guide | https://docs.ton.org/v3/guidelines/dapps/tma/tutorials/step-by-step-guide |
-
-### npm Packages
-
-| Package | npm |
-|---------|-----|
-| @telegram-apps/sdk | https://www.npmjs.com/package/@telegram-apps/sdk |
-| @telegram-apps/sdk-react | https://www.npmjs.com/package/@telegram-apps/sdk-react |
-| @telegram-apps/init-data-node | https://www.npmjs.com/package/@telegram-apps/init-data-node |
-| @tonconnect/ui-react | https://www.npmjs.com/package/@tonconnect/ui-react |
-| @ton/ton | https://www.npmjs.com/package/@ton/ton |
-| @ton-api/client | https://www.npmjs.com/package/@ton-api/client |
-| grammy | https://www.npmjs.com/package/grammy |
